@@ -4,6 +4,8 @@ import LoginScreen from "./components/LoginScreen";
 import ChatLayout from "./components/ChatLayout";
 import { SocketProvider } from "./contexts/SocketContext";
 import { ChatProvider } from "./contexts/ChatContext";
+import { HiOutlineXMark } from "react-icons/hi2";
+import Avatar from "./components/Avatar";
 import "./styles/global.css";
 
 axios.defaults.baseURL = process.env.REACT_APP_SERVER_URL || window.location.origin;
@@ -52,26 +54,10 @@ export default function App() {
         <ChatLayout currentUser={currentUser} onLogout={handleLogout} />
 
         {popup && (
-          <div onClick={() => setPopup(null)} style={{
-            position: "fixed", top: 20, right: 20,
-            background: "var(--bg-tertiary)", border: "1px solid var(--border)",
-            borderRadius: 12, padding: "12px 16px", boxShadow: "var(--shadow-lg)",
-            zIndex: 9999, minWidth: 260, maxWidth: 320,
-            animation: "slideDown 0.3s ease", cursor: "pointer",
-            display: "flex", alignItems: "flex-start", gap: 10,
-          }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: "50%", background: "var(--accent)",
-              color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
-              fontWeight: 700, fontSize: 16, flexShrink: 0,
-            }}>
-              {popup.name.charAt(0).toUpperCase()}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text-primary)", marginBottom: 2 }}>{popup.name}</div>
-              <div style={{ fontSize: 13, color: "var(--text-secondary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{popup.message}</div>
-            </div>
-            <button onClick={() => setPopup(null)} style={{ color: "var(--text-muted)", fontSize: 16, flexShrink: 0 }}>✕</button>
+          <div className="toast-notification" onClick={() => setPopup(null)}>
+            <Avatar name={popup.name} size={39} />
+            <div className="toast-copy"><strong>{popup.name}</strong><p>{popup.message}</p></div>
+            <button onClick={() => setPopup(null)}><HiOutlineXMark /></button>
           </div>
         )}
       </ChatProvider>

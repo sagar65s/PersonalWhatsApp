@@ -1,53 +1,51 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import { HiOutlineChatBubbleLeftRight, HiOutlineLockClosed, HiOutlineSparkles } from "react-icons/hi2";
 import Sidebar from "./Sidebar";
 import ChatWindow from "./ChatWindow";
 import { useChat } from "../contexts/ChatContext";
 
 function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [mobile, setMobile] = useState(() => window.innerWidth < 820);
   useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener("resize", handler);
-    return () => window.removeEventListener("resize", handler);
+    const update = () => setMobile(window.innerWidth < 820);
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
   }, []);
-  return isMobile;
+  return mobile;
+}
+
+function WelcomePanel() {
+  return (
+    <main className="welcome-panel">
+      <div className="ambient ambient-one" />
+      <div className="ambient ambient-two" />
+      <div className="welcome-art" aria-hidden="true">
+        <span className="welcome-ring ring-one" />
+        <span className="welcome-ring ring-two" />
+        <div className="welcome-icon"><HiOutlineChatBubbleLeftRight /></div>
+        <span className="floating-chip chip-one"><HiOutlineSparkles /> Instant</span>
+        <span className="floating-chip chip-two"><HiOutlineLockClosed /> Private</span>
+      </div>
+      <div className="eyebrow">YOUR PRIVATE SPACE</div>
+      <h1>Messages that feel<br />closer than ever.</h1>
+      <p>Select a conversation or find someone new. Your chats, files and moments stay beautifully organized.</p>
+      <div className="welcome-secure"><HiOutlineLockClosed /> Secured conversations</div>
+    </main>
+  );
 }
 
 export default function ChatLayout({ currentUser, onLogout }) {
   const { activeRoom, setActiveRoom } = useChat();
-  const isMobile = useIsMobile();
-
-  const handleBack = () => setActiveRoom?.(null);
-
-  // Mobile: show either sidebar or chat, not both
-  if (isMobile) {
-    if (activeRoom) {
-      return (
-        <div style={{ height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-primary)" }}>
-          <ChatWindow currentUser={currentUser} onBack={handleBack} isMobile={true} />
-        </div>
-      );
-    }
-    return (
-      <div style={{ height: "100dvh", overflow: "hidden", background: "var(--bg-secondary)" }}>
-        <Sidebar currentUser={currentUser} onLogout={onLogout} fullWidth={true} />
-      </div>
-    );
+  const mobile = useIsMobile();
+  if (mobile) {
+    return activeRoom
+      ? <div className="mobile-screen"><ChatWindow currentUser={currentUser} onBack={() => setActiveRoom(null)} isMobile /></div>
+      : <div className="mobile-screen"><Sidebar currentUser={currentUser} onLogout={onLogout} fullWidth /></div>;
   }
-
-  // Desktop: sidebar + chat side by side
   return (
-    <div className="app-shell" style={{ display: "flex", height: "100dvh", overflow: "hidden", background: "var(--bg-primary)" }}>
+    <div className="app-shell">
       <Sidebar currentUser={currentUser} onLogout={onLogout} />
-      {activeRoom ? (
-        <ChatWindow currentUser={currentUser} />
-      ) : (
-        <div className="empty-chat" style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "var(--bg-primary)", borderLeft: "1px solid var(--border)" }}>
-          <div className="empty-chat-orb">✦</div>
-          <div style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>Your conversations, beautifully connected.</div>
-          <div style={{ fontSize: 14, color: "var(--text-secondary)" }}>Choose a chat or start a new conversation.</div>
-        </div>
-      )}
+      {activeRoom ? <ChatWindow currentUser={currentUser} /> : <WelcomePanel />}
     </div>
   );
 }

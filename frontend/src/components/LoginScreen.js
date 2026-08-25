@@ -1,176 +1,116 @@
 import React, { useState } from "react";
 import axios from "axios";
+import { HiOutlineArrowLeft, HiOutlineChatBubbleLeftRight, HiOutlineCheckCircle, HiOutlineEnvelope, HiOutlineEye, HiOutlineEyeSlash, HiOutlineKey, HiOutlineLockClosed, HiOutlineShieldCheck, HiOutlineSparkles, HiOutlineUser } from "react-icons/hi2";
 
-const TABS = { login: "login", forgot: "forgot", reset: "reset" };
+const SCREEN = { LOGIN: "login", FORGOT: "forgot", RESET: "reset" };
 
 export default function LoginScreen({ onLogin }) {
-  const [tab, setTab] = useState(TABS.login);
+  const [screen, setScreen] = useState(SCREEN.LOGIN);
+  const [register, setRegister] = useState(false);
   const [form, setForm] = useState({ username: "", email: "", password: "" });
-  const [resetForm, setResetForm] = useState({ email: "", code: "", newPassword: "" });
-  const [isNew, setIsNew] = useState(false);
+  const [reset, setReset] = useState({ email: "", code: "", newPassword: "" });
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [notice, setNotice] = useState({ type: "", text: "" });
 
-  const set = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
-  const setR = (k) => (e) => setResetForm((p) => ({ ...p, [k]: e.target.value }));
+  const update = (key) => (event) => setForm((old) => ({ ...old, [key]: event.target.value }));
+  const updateReset = (key) => (event) => setReset((old) => ({ ...old, [key]: event.target.value }));
+  const fail = (text) => setNotice({ type: "error", text });
 
-  async function handleLogin(e) {
-    e.preventDefault();
-    setError(""); setSuccess("");
-    if (!form.username.trim() || !form.password) return setError("Fill all fields");
-    if (isNew && !form.email) return setError("Email required for registration");
+  async function submitLogin(event) {
+    event.preventDefault();
+    setNotice({ type: "", text: "" });
+    if (!form.username.trim() || !form.password) return fail("Enter your username and password.");
+    if (register && !form.email.trim()) return fail("Email is required to create your account.");
     setLoading(true);
     try {
-      const { data } = await axios.post("/api/users/login", {
-        username: form.username.trim(),
-        email: form.email.trim() || undefined,
-        password: form.password,
-      });
+      const { data } = await axios.post("/api/users/login", { username: form.username.trim(), email: form.email.trim() || undefined, password: form.password });
       onLogin(data);
-    } catch (err) {
-      setError(err.response?.data?.message || "Something went wrong");
-    } finally {
-      setLoading(false);
-    }
+    } catch (error) { fail(error.response?.data?.message || "Unable to connect. Please try again."); }
+    finally { setLoading(false); }
   }
 
-  async function handleForgot(e) {
-    e.preventDefault();
-    setError(""); setSuccess("");
-    if (!resetForm.email) return setError("Enter your email");
-    setLoading(true);
+  async function submitForgot(event) {
+    event.preventDefault();
+    if (!reset.email.trim()) return fail("Enter your account email.");
+    setLoading(true); setNotice({ type: "", text: "" });
     try {
-      const { data } = await axios.post("/api/users/forgot-password", { email: resetForm.email });
-      setSuccess(data.message);
-      setTab(TABS.reset);
-    } catch (err) {
-      setError(err.response?.data?.message || "Something went wrong");
-    } finally {
-      setLoading(false);
-    }
+      const { data } = await axios.post("/api/users/forgot-password", { email: reset.email.trim() });
+      setNotice({ type: "success", text: data.message }); setScreen(SCREEN.RESET);
+    } catch (error) { fail(error.response?.data?.message || "Could not send the reset code."); }
+    finally { setLoading(false); }
   }
 
-  async function handleReset(e) {
-    e.preventDefault();
-    setError(""); setSuccess("");
-    if (!resetForm.code || !resetForm.newPassword) return setError("Fill all fields");
-    setLoading(true);
+  async function submitReset(event) {
+    event.preventDefault();
+    if (!reset.code.trim() || !reset.newPassword) return fail("Enter the code and your new password.");
+    setLoading(true); setNotice({ type: "", text: "" });
     try {
-      const { data } = await axios.post("/api/users/reset-password", {
-        email: resetForm.email,
-        code: resetForm.code,
-        newPassword: resetForm.newPassword,
-      });
-      setSuccess(data.message);
-      setTimeout(() => { setTab(TABS.login); setSuccess(""); }, 2000);
-    } catch (err) {
-      setError(err.response?.data?.message || "Something went wrong");
-    } finally {
-      setLoading(false);
-    }
+      const { data } = await axios.post("/api/users/reset-password", { email: reset.email.trim(), code: reset.code.trim(), newPassword: reset.newPassword });
+      setNotice({ type: "success", text: data.message });
+      setTimeout(() => { setScreen(SCREEN.LOGIN); setNotice({ type: "", text: "" }); }, 1400);
+    } catch (error) { fail(error.response?.data?.message || "Password reset failed."); }
+    finally { setLoading(false); }
   }
 
-  const inputStyle = {
-    width: "100%", padding: "12px 16px", borderRadius: 10,
-    background: "#2a3942", color: "#e9edef", fontSize: 15,
-    border: "1px solid rgba(134,150,160,0.2)", marginBottom: 12,
-    transition: "border 0.2s",
-  };
-
-  const btnStyle = {
-    width: "100%", padding: "13px", borderRadius: 10,
-    background: loading ? "#2a3942" : "#00a884",
-    color: "#fff", fontSize: 15, fontWeight: 600,
-    cursor: loading ? "not-allowed" : "pointer",
-    transition: "background 0.2s", marginTop: 4,
-  };
+  const backToLogin = () => { setScreen(SCREEN.LOGIN); setNotice({ type: "", text: "" }); };
 
   return (
-    <div className="login-shell" style={{
-      minHeight: "100dvh", display: "flex", alignItems: "center",
-      justifyContent: "center", background: "#111b21", padding: 16,
-    }}>
-      <div className="login-card" style={{
-        width: "100%", maxWidth: 400, background: "#202c33",
-        borderRadius: 16, padding: 32, boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
-      }}>
-        {/* Logo */}
-        <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div className="brand-mark">C</div>
-          <div style={{ fontSize: 26, fontWeight: 750, color: "#e9edef" }}>ChatApp</div>
-          <div style={{ fontSize: 13, color: "#8696a0", marginTop: 4 }}>
-            {tab === TABS.login ? "Sign in or create account" : tab === TABS.forgot ? "Reset your password" : "Enter reset code"}
-          </div>
+    <main className="auth-page">
+      <div className="auth-grid" />
+      <span className="auth-blob blob-a" /><span className="auth-blob blob-b" />
+      <section className="auth-story">
+        <div className="auth-brand"><span><HiOutlineChatBubbleLeftRight /></span><strong>ChatApp</strong></div>
+        <div className="auth-story-copy">
+          <div className="eyebrow"><HiOutlineSparkles /> A BETTER WAY TO CONNECT</div>
+          <h1>Conversations,<br /><span>reimagined.</span></h1>
+          <p>A calm, private space for the people and moments that matter most.</p>
+          <div className="story-points"><span><HiOutlineShieldCheck /> Private by design</span><span><HiOutlineCheckCircle /> Real-time delivery</span></div>
         </div>
+        <div className="story-message message-a"><i>AS</i><div><b>Alex</b><p>That looks amazing! ✨</p></div></div>
+        <div className="story-message message-b"><i>YO</i><div><b>You</b><p>Sending it right now</p></div></div>
+        <small className="auth-footer">Secure • Simple • Beautiful</small>
+      </section>
 
-        {error && (
-          <div style={{ background: "rgba(241,92,109,0.1)", border: "1px solid rgba(241,92,109,0.3)", borderRadius: 8, padding: "10px 14px", marginBottom: 16, color: "#f15c6d", fontSize: 13 }}>
-            {error}
+      <section className="auth-form-side">
+        <div className="auth-card">
+          {screen !== SCREEN.LOGIN && <button className="auth-back" onClick={backToLogin}><HiOutlineArrowLeft /> Back</button>}
+          <div className="auth-card-head">
+            <span className="auth-mobile-logo"><HiOutlineChatBubbleLeftRight /></span>
+            <div className="eyebrow">{screen === SCREEN.LOGIN ? (register ? "CREATE ACCOUNT" : "WELCOME BACK") : screen === SCREEN.FORGOT ? "ACCOUNT RECOVERY" : "SECURE RESET"}</div>
+            <h2>{screen === SCREEN.LOGIN ? (register ? "Join ChatApp" : "Sign in to ChatApp") : screen === SCREEN.FORGOT ? "Forgot password?" : "Create new password"}</h2>
+            <p>{screen === SCREEN.LOGIN ? (register ? "Create your private messaging space." : "Continue your conversations from where you left off.") : screen === SCREEN.FORGOT ? "We’ll send a six-digit code to your email." : "Enter the code from your email."}</p>
           </div>
-        )}
-        {success && (
-          <div style={{ background: "rgba(0,168,132,0.1)", border: "1px solid rgba(0,168,132,0.3)", borderRadius: 8, padding: "10px 14px", marginBottom: 16, color: "#00a884", fontSize: 13 }}>
-            {success}
-          </div>
-        )}
 
-        {tab === TABS.login && (
-          <form onSubmit={handleLogin}>
-            <input style={inputStyle} placeholder="Username" value={form.username} onChange={set("username")} autoComplete="username" />
-            {isNew && (
-              <input style={inputStyle} placeholder="Email" type="email" value={form.email} onChange={set("email")} autoComplete="email" />
-            )}
-            <input style={inputStyle} placeholder="Password" type="password" value={form.password} onChange={set("password")} autoComplete="current-password" />
+          {notice.text && <div className={`form-notice ${notice.type}`}><span>{notice.type === "success" ? <HiOutlineCheckCircle /> : "!"}</span>{notice.text}</div>}
 
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-              <input type="checkbox" id="isNew" checked={isNew} onChange={(e) => setIsNew(e.target.checked)} style={{ width: 16, height: 16, cursor: "pointer" }} />
-              <label htmlFor="isNew" style={{ fontSize: 13, color: "#8696a0", cursor: "pointer" }}>
-                New user? Register
-              </label>
-            </div>
+          {screen === SCREEN.LOGIN && <form className="auth-form" onSubmit={submitLogin}>
+            <Field icon={<HiOutlineUser />} label="Username"><input value={form.username} onChange={update("username")} placeholder="Enter your username" autoComplete="username" /></Field>
+            {register && <Field icon={<HiOutlineEnvelope />} label="Email address"><input type="email" value={form.email} onChange={update("email")} placeholder="you@example.com" autoComplete="email" /></Field>}
+            <Field icon={<HiOutlineLockClosed />} label="Password" action={<button type="button" aria-label="Toggle password" onClick={() => setShowPassword((value) => !value)}>{showPassword ? <HiOutlineEyeSlash /> : <HiOutlineEye />}</button>}>
+              <input type={showPassword ? "text" : "password"} value={form.password} onChange={update("password")} placeholder="Enter your password" autoComplete={register ? "new-password" : "current-password"} />
+            </Field>
+            {!register && <button type="button" className="forgot-link" onClick={() => { setScreen(SCREEN.FORGOT); setNotice({ type: "", text: "" }); }}>Forgot password?</button>}
+            <button className="primary-btn" disabled={loading}>{loading ? <span className="button-loader" /> : register ? "Create my account" : "Sign in"}</button>
+            <div className="auth-switch">{register ? "Already have an account?" : "New to ChatApp?"}<button type="button" onClick={() => { setRegister((value) => !value); setNotice({ type: "", text: "" }); }}>{register ? "Sign in" : "Create account"}</button></div>
+          </form>}
 
-            <button type="submit" style={btnStyle} disabled={loading}>
-              {loading ? "Please wait..." : isNew ? "Register" : "Login"}
-            </button>
+          {screen === SCREEN.FORGOT && <form className="auth-form" onSubmit={submitForgot}>
+            <Field icon={<HiOutlineEnvelope />} label="Email address"><input type="email" value={reset.email} onChange={updateReset("email")} placeholder="you@example.com" autoFocus /></Field>
+            <button className="primary-btn" disabled={loading}>{loading ? <span className="button-loader" /> : "Send reset code"}</button>
+          </form>}
 
-            <div style={{ textAlign: "center", marginTop: 16 }}>
-              <button type="button" onClick={() => { setTab(TABS.forgot); setError(""); }} style={{ color: "#00a884", fontSize: 13, background: "none", border: "none" }}>
-                Forgot password?
-              </button>
-            </div>
-          </form>
-        )}
-
-        {tab === TABS.forgot && (
-          <form onSubmit={handleForgot}>
-            <input style={inputStyle} placeholder="Your email address" type="email" value={resetForm.email} onChange={setR("email")} />
-            <button type="submit" style={btnStyle} disabled={loading}>
-              {loading ? "Sending..." : "Send Reset Code"}
-            </button>
-            <div style={{ textAlign: "center", marginTop: 16 }}>
-              <button type="button" onClick={() => { setTab(TABS.login); setError(""); }} style={{ color: "#8696a0", fontSize: 13 }}>
-                ← Back to login
-              </button>
-            </div>
-          </form>
-        )}
-
-        {tab === TABS.reset && (
-          <form onSubmit={handleReset}>
-            <input style={inputStyle} placeholder="6-digit code from email" value={resetForm.code} onChange={setR("code")} maxLength={6} />
-            <input style={inputStyle} placeholder="New password" type="password" value={resetForm.newPassword} onChange={setR("newPassword")} />
-            <button type="submit" style={btnStyle} disabled={loading}>
-              {loading ? "Resetting..." : "Reset Password"}
-            </button>
-            <div style={{ textAlign: "center", marginTop: 16 }}>
-              <button type="button" onClick={() => { setTab(TABS.login); setError(""); }} style={{ color: "#8696a0", fontSize: 13 }}>
-                ← Back to login
-              </button>
-            </div>
-          </form>
-        )}
-      </div>
-    </div>
+          {screen === SCREEN.RESET && <form className="auth-form" onSubmit={submitReset}>
+            <Field icon={<HiOutlineKey />} label="Six-digit code"><input value={reset.code} onChange={updateReset("code")} placeholder="000000" inputMode="numeric" maxLength={6} /></Field>
+            <Field icon={<HiOutlineLockClosed />} label="New password"><input type="password" value={reset.newPassword} onChange={updateReset("newPassword")} placeholder="Minimum 8 characters" /></Field>
+            <button className="primary-btn" disabled={loading}>{loading ? <span className="button-loader" /> : "Update password"}</button>
+          </form>}
+        </div>
+      </section>
+    </main>
   );
+}
+
+function Field({ icon, label, action, children }) {
+  return <label className="field"><span className="field-label">{label}</span><span className="field-control"><i>{icon}</i>{children}{action}</span></label>;
 }

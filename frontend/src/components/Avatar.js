@@ -1,39 +1,25 @@
 import React from "react";
+import { HiUserGroup } from "react-icons/hi2";
 
-const COLORS = [
-  "#e57373","#f06292","#ba68c8","#7986cb",
-  "#4fc3f7","#4dd0e1","#4db6ac","#81c784",
-  "#aed581","#ffb74d","#ff8a65","#a1887f",
+const GRADIENTS = [
+  ["#8b5cf6", "#5b7cff"], ["#06b6d4", "#2dd4bf"], ["#f97316", "#fb7185"],
+  ["#22c55e", "#14b8a6"], ["#ec4899", "#8b5cf6"], ["#3b82f6", "#06b6d4"],
 ];
 
-function getColor(name) {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  return COLORS[Math.abs(hash) % COLORS.length];
+function gradientFor(name) {
+  const hash = [...(name || "?")].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  const [from, to] = GRADIENTS[hash % GRADIENTS.length];
+  return `linear-gradient(135deg, ${from}, ${to})`;
 }
 
-export default function Avatar({ name = "?", size = 40, isGroup = false }) {
-  const initials = isGroup
-    ? (name[0] || "G").toUpperCase()
-    : name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
-
+export default function Avatar({ name = "?", size = 44, isGroup = false, online = false }) {
+  const initials = name.split(/\s+/).filter(Boolean).map((word) => word[0]).join("").slice(0, 2).toUpperCase() || "?";
   return (
-    <div style={{
-      width: size,
-      height: size,
-      borderRadius: "50%",
-      background: isGroup ? "#2a3942" : getColor(name),
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontSize: size * 0.38,
-      fontWeight: 700,
-      color: "#fff",
-      flexShrink: 0,
-      userSelect: "none",
-      border: isGroup ? "2px solid #3d5a65" : "none",
-    }}>
-      {isGroup ? "👥" : initials}
+    <div className="avatar-wrap" style={{ width: size, height: size, minWidth: size }}>
+      <div className="avatar-core" style={{ background: gradientFor(name), fontSize: size * 0.34 }}>
+        {isGroup ? <HiUserGroup /> : initials}
+      </div>
+      {online && <span className="avatar-online" aria-label="Online" />}
     </div>
   );
 }

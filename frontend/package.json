@@ -12,10 +12,9 @@
     "react-scripts": "5.0.1",
     "socket.io-client": "^4.6.1"
   },
-
   "scripts": {
     "dev": "react-scripts start",
-    "start": "serve -s build -l $PORT",
+    "start": "react-scripts start",
     "build": "react-scripts build"
   },
   "browserslist": {

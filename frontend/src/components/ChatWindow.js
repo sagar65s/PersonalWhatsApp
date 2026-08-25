@@ -1,331 +1,168 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
+import { HiOutlineArrowLeft, HiOutlineArrowUp, HiOutlineDocument, HiOutlineFaceSmile, HiOutlineMagnifyingGlass, HiOutlinePaperClip, HiOutlinePhone, HiOutlineXMark } from "react-icons/hi2";
+import Avatar from "./Avatar";
+import MessageBubble from "./MessageBubble";
 import { useChat } from "../contexts/ChatContext";
 import { useSocket } from "../contexts/SocketContext";
-import MessageBubble from "./MessageBubble";
-import Avatar from "./Avatar";
-import { BsPaperclip } from "react-icons/bs";
-import { encryptMessage, decryptMessage } from "../utils";
+import { decryptMessage, encryptMessage } from "../utils";
 
-const SERVER = process.env.REACT_APP_SERVER_URL || window.location.origin;
+const ACCEPTED = "image/jpeg,image/png,image/gif,image/webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.rtf,.odt,.ods,.odp";
+const EMOJIS = ["😀", "😂", "😍", "🥳", "👍", "👏", "🔥", "✨", "❤️", "✅", "🙏", "🎉"];
 
-export default function ChatWindow({ currentUser, onBack, isMobile }) {
+export default function ChatWindow({ currentUser, onBack, isMobile = false }) {
   const { activeRoom, messages } = useChat();
   const { socket, onlineUserIds } = useSocket();
   const [text, setText] = useState("");
-  const [typingUsers, setTypingUsers] = useState({});
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [sendError, setSendError] = useState("");
+  const [typing, setTyping] = useState({});
   const [pendingFile, setPendingFile] = useState(null);
-  const [replyTo, setReplyTo] = useState(null);
-  const [forwardMsg, setForwardMsg] = useState(null);
-  const [rooms, setRooms] = useState([]);
-  const messagesEndRef = useRef(null);
-  const typingTimeoutRef = useRef(null);
-  const fileInputRef = useRef(null);
-  const textareaRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState("");
+  const [reply, setReply] = useState(null);
+  const [forward, setForward] = useState(null);
+  const [people, setPeople] = useState([]);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const endRef = useRef(null);
+  const typingTimer = useRef(null);
+  const fileInput = useRef(null);
+  const textarea = useRef(null);
 
-  const roomMessages = messages[activeRoom?._id] || [];
+  const roomMessages = useMemo(() => messages[activeRoom?._id] || [], [messages, activeRoom?._id]);
+  const filteredMessages = useMemo(() => query.trim() ? roomMessages.filter((message) => decryptMessage(message.content).toLowerCase().includes(query.toLowerCase()) || message.fileName?.toLowerCase().includes(query.toLowerCase())) : roomMessages, [roomMessages, query]);
+  const other = activeRoom?.type === "direct" ? activeRoom.members?.find((member) => member._id !== currentUser._id) : null;
+  const roomName = activeRoom?.type === "group" ? activeRoom.name : other?.username || "Conversation";
+  const otherOnline = Boolean(other && onlineUserIds.includes(other._id));
+  const typingNames = Object.values(typing);
+  const status = typingNames.length ? `${typingNames.join(", ")} ${typingNames.length > 1 ? "are" : "is"} typing…` : activeRoom?.type === "group" ? `${activeRoom.members?.length || 0} members` : otherOnline ? "Online now" : "Offline";
+  const previewUrl = useMemo(() => pendingFile?.type.startsWith("image/") ? URL.createObjectURL(pendingFile) : "", [pendingFile]);
+
+  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [roomMessages.length]);
+  useEffect(() => { setText(""); setTyping({}); setPendingFile(null); setReply(null); setQuery(""); setSearchOpen(false); }, [activeRoom?._id]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [roomMessages.length]);
-
-  useEffect(() => {
-    setTypingUsers({});
-    setText("");
-    setPendingFile(null);
-    setReplyTo(null);
-  }, [activeRoom?._id]);
-
-  useEffect(() => {
-    const s = socket.current;
-    if (!s || !activeRoom) return;
-    const onStart = ({ userId, username, roomId }) => {
-      if (userId === currentUser._id || roomId !== activeRoom._id) return;
-      setTypingUsers((p) => ({ ...p, [userId]: username }));
-    };
-    const onStop = ({ userId }) => {
-      setTypingUsers((p) => { const n = { ...p }; delete n[userId]; return n; });
-    };
-    s.on("typing:start", onStart);
-    s.on("typing:stop", onStop);
-    return () => { s.off("typing:start", onStart); s.off("typing:stop", onStop); };
+    const activeSocket = socket.current;
+    if (!activeSocket || !activeRoom) return undefined;
+    const started = ({ userId, username, roomId }) => { if (userId !== currentUser._id && roomId === activeRoom._id) setTyping((old) => ({ ...old, [userId]: username })); };
+    const stopped = ({ userId }) => setTyping((old) => { const next = { ...old }; delete next[userId]; return next; });
+    const messageError = ({ message }) => setError(message || "Message could not be sent.");
+    activeSocket.on("typing:start", started); activeSocket.on("typing:stop", stopped); activeSocket.on("message:error", messageError);
+    return () => { activeSocket.off("typing:start", started); activeSocket.off("typing:stop", stopped); activeSocket.off("message:error", messageError); };
   }, [socket, activeRoom, currentUser._id]);
 
-  const handleTyping = (e) => {
-    setText(e.target.value);
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + "px";
-    }
-    const s = socket.current;
-    if (!s || !activeRoom) return;
-    s.emit("typing:start", { roomId: activeRoom._id, userId: currentUser._id, username: currentUser.username });
-    clearTimeout(typingTimeoutRef.current);
-    typingTimeoutRef.current = setTimeout(() => {
-      s.emit("typing:stop", { roomId: activeRoom._id, userId: currentUser._id });
-    }, 1500);
+  const resizeTextarea = () => {
+    if (!textarea.current) return;
+    textarea.current.style.height = "auto";
+    textarea.current.style.height = `${Math.min(textarea.current.scrollHeight, 130)}px`;
   };
 
-  const sendMessage = useCallback(async () => {
-    const s = socket.current;
-    if (!activeRoom || !s) return;
+  const handleText = (event) => {
+    setText(event.target.value); setError(""); resizeTextarea();
+    if (!socket.current || !activeRoom) return;
+    socket.current.emit("typing:start", { roomId: activeRoom._id, username: currentUser.username });
+    clearTimeout(typingTimer.current);
+    typingTimer.current = setTimeout(() => socket.current?.emit("typing:stop", { roomId: activeRoom._id }), 1300);
+  };
 
+  const chooseFile = (file) => {
+    setError("");
+    if (!file) return;
+    if (file.size > 25 * 1024 * 1024) return setError("This file is larger than the 25 MB limit.");
+    setPendingFile(file); setEmojiOpen(false);
+  };
+
+  const send = useCallback(async () => {
+    const activeSocket = socket.current;
+    if (!activeRoom || !activeSocket || uploading) return;
     if (pendingFile) {
       let uploaded = false;
-      setUploading(true);
-      setSendError("");
-      setUploadProgress(0);
+      setUploading(true); setProgress(0); setError("");
       try {
-        const fd = new FormData();
-        fd.append("file", pendingFile);
-        const { data } = await axios.post("/api/upload", fd, {
-          onUploadProgress: (event) => setUploadProgress(event.total ? Math.round((event.loaded * 100) / event.total) : 0),
-        });
-        s.emit("message:send", {
-          roomId: activeRoom._id, senderId: currentUser._id,
-          content: text.trim() || "", type: data.type,
-          fileUrl: data.fileUrl, fileName: data.fileName,
-          fileSize: data.fileSize, mimeType: data.mimeType,
-        });
+        const body = new FormData(); body.append("file", pendingFile);
+        const { data } = await axios.post("/api/upload", body, { onUploadProgress: (event) => setProgress(event.total ? Math.round((event.loaded * 100) / event.total) : 0) });
+        activeSocket.emit("message:send", { roomId: activeRoom._id, content: text.trim(), type: data.type, fileUrl: data.fileUrl, fileName: data.fileName, fileSize: data.fileSize, mimeType: data.mimeType });
         uploaded = true;
-      } catch (error) {
-        setSendError(error.response?.data?.message || "File upload failed. Please try again.");
-      } finally {
-        setUploading(false); setUploadProgress(0);
-        if (uploaded) { setPendingFile(null); setText(""); setReplyTo(null); }
-        if (textareaRef.current) textareaRef.current.style.height = "auto";
+      } catch (requestError) { setError(requestError.response?.data?.message || "Upload failed. Please try again."); }
+      finally {
+        setUploading(false); setProgress(0);
+        if (uploaded) { setPendingFile(null); setText(""); setReply(null); }
       }
       return;
     }
-
     const content = text.trim();
     if (!content) return;
+    activeSocket.emit("message:send", { roomId: activeRoom._id, content: encryptMessage(content), type: "text" });
+    activeSocket.emit("typing:stop", { roomId: activeRoom._id });
+    clearTimeout(typingTimer.current); setText(""); setReply(null); setEmojiOpen(false);
+    if (textarea.current) textarea.current.style.height = "auto";
+  }, [socket, activeRoom, text, pendingFile, uploading]);
 
-    s.emit("message:send", {
-      roomId: activeRoom._id, senderId: currentUser._id,
-      content: encryptMessage(content), type: "text",
-    });
-    s.emit("typing:stop", { roomId: activeRoom._id, userId: currentUser._id });
-    clearTimeout(typingTimeoutRef.current);
-    setText(""); setReplyTo(null);
-    if (textareaRef.current) textareaRef.current.style.height = "auto";
-  }, [socket, activeRoom, currentUser, text, pendingFile]);
-
-  const chooseFile = (file) => {
-    setSendError("");
-    if (!file) return;
-    if (file.size > 25 * 1024 * 1024) return setSendError("Maximum file size is 25 MB.");
-    setPendingFile(file);
+  const keyDown = (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } };
+  const openForward = (message) => { setForward(message); axios.get(`/api/users?exclude=${currentUser._id}`).then(({ data }) => setPeople(data)).catch(() => setPeople([])); };
+  const forwardTo = async (user) => {
+    try {
+      const { data: room } = await axios.post("/api/rooms/direct", { userId2: user._id });
+      socket.current?.emit("message:send", { roomId: room._id, content: forward.content, type: forward.type, fileUrl: forward.fileUrl || undefined, fileName: forward.fileName || undefined, fileSize: forward.fileSize || undefined, mimeType: forward.mimeType || undefined });
+      setForward(null);
+    } catch { setError("Could not forward this message."); }
   };
-
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-  };
-
-  // Forward message to another room
-  const handleForward = async (msg, targetRoomId) => {
-    const s = socket.current;
-    if (!s) return;
-    s.emit("message:send", {
-      roomId: targetRoomId, senderId: currentUser._id,
-      content: msg.content, type: msg.type,
-      fileUrl: msg.fileUrl || undefined, fileName: msg.fileName || undefined,
-      fileSize: msg.fileSize || undefined, mimeType: msg.mimeType || undefined,
-    });
-    setForwardMsg(null);
-  };
-
-  const getRoomName = () => {
-    if (!activeRoom) return "";
-    if (activeRoom.type === "group") return activeRoom.name;
-    return activeRoom.members?.find((m) => m._id !== currentUser._id)?.username || "Unknown";
-  };
-
-  const getRoomStatus = () => {
-    if (!activeRoom) return "";
-    if (activeRoom.type === "group") return (activeRoom.members?.length || 0) + " members";
-    const other = activeRoom.members?.find((m) => m._id !== currentUser._id);
-    return other ? (onlineUserIds.includes(other._id) ? "Online" : "Offline") : "";
-  };
-
-  const isOtherOnline = () => {
-    if (!activeRoom || activeRoom.type !== "direct") return false;
-    const other = activeRoom.members?.find((m) => m._id !== currentUser._id);
-    return other ? onlineUserIds.includes(other._id) : false;
-  };
-
-  const typingNames = Object.values(typingUsers);
-  const typingText = typingNames.length === 0 ? "" : typingNames.length === 1 ? typingNames[0] + " is typing" : typingNames.join(", ") + " are typing";
-
-  function groupByDate(msgs) {
-    const groups = [];
-    let lastDate = null;
-    for (const msg of msgs) {
-      const d = new Date(msg.createdAt).toDateString();
-      if (d !== lastDate) { groups.push({ type: "divider", date: d, id: "d-" + d }); lastDate = d; }
-      groups.push({ type: "message", msg, id: msg._id });
-    }
-    return groups;
-  }
-
-  function formatDividerDate(dateStr) {
-    const today = new Date().toDateString();
-    const yesterday = new Date(Date.now() - 86400000).toDateString();
-    if (dateStr === today) return "Today";
-    if (dateStr === yesterday) return "Yesterday";
-    return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-  }
 
   if (!activeRoom) return null;
-  const grouped = groupByDate(roomMessages);
+  const timeline = groupByDate(filteredMessages);
 
   return (
-    <div className="chat-window" style={{ flex: 1, minWidth: 0, height: "100dvh", display: "flex", flexDirection: "column", background: "var(--bg-primary)", overflow: "hidden" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: isMobile ? "12px 16px" : "10px 20px", background: "var(--bg-secondary)", borderBottom: "1px solid var(--border)", flexShrink: 0, zIndex: 10, boxShadow: "0 1px 3px rgba(0,0,0,0.3)" }}>
-        {isMobile && onBack && (
-          <button onClick={onBack} style={{ color: "var(--accent)", fontSize: 26, lineHeight: 1, padding: "0 4px 0 0" }}>‹</button>
-        )}
-        <Avatar name={getRoomName()} size={42} isGroup={activeRoom.type === "group"} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600, fontSize: 16, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{getRoomName()}</div>
-          <div style={{ fontSize: 12, color: typingText ? "var(--accent)" : isOtherOnline() ? "var(--accent)" : "var(--text-secondary)", fontStyle: typingText ? "italic" : "normal" }}>
-            {typingText ? typingText + "..." : getRoomStatus()}
-          </div>
+    <main className="chat-window">
+      <header className="chat-header">
+        {isMobile && <button className="icon-btn back-btn" onClick={onBack}><HiOutlineArrowLeft /></button>}
+        <Avatar name={roomName} size={46} isGroup={activeRoom.type === "group"} online={otherOnline} />
+        <div className="chat-heading"><strong>{roomName}</strong><span className={typingNames.length || otherOnline ? "accent" : ""}>{status}</span></div>
+        {searchOpen && <div className="header-search"><HiOutlineMagnifyingGlass /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search in chat" /><button onClick={() => { setQuery(""); setSearchOpen(false); }}><HiOutlineXMark /></button></div>}
+        <div className="chat-actions"><button className="icon-btn" title="Search" onClick={() => setSearchOpen((value) => !value)}><HiOutlineMagnifyingGlass /></button><button className="icon-btn" title="Voice call"><HiOutlinePhone /></button></div>
+      </header>
+
+      <section className="message-canvas" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); chooseFile(event.dataTransfer.files?.[0]); }}>
+        <div className="canvas-noise" />
+        {timeline.length ? timeline.map((item) => item.kind === "date"
+          ? <div className="date-divider" key={item.id}><span>{formatDate(item.date)}</span></div>
+          : <MessageBubble key={item.message._id} message={item.message} isOwn={(item.message.sender?._id || item.message.sender) === currentUser._id} onReply={setReply} onForward={openForward} />)
+          : <div className="no-results"><HiOutlineMagnifyingGlass /><strong>No matching messages</strong><span>Try another word or filename.</span></div>}
+        {typingNames.length > 0 && <div className="typing-bubble"><i /><i /><i /></div>}
+        <div ref={endRef} />
+      </section>
+
+      {reply && <div className="reply-preview"><span className="reply-accent" /><div><strong>Replying to {reply.sender?.username || "message"}</strong><p>{reply.type === "image" ? "Photo" : reply.type === "file" ? reply.fileName : decryptMessage(reply.content)}</p></div><button onClick={() => setReply(null)}><HiOutlineXMark /></button></div>}
+
+      {pendingFile && <div className="attachment-preview">{previewUrl ? <img src={previewUrl} alt="Selected" /> : <span className="attachment-file-icon"><HiOutlineDocument /></span>}<div><strong>{pendingFile.name}</strong><small>{(pendingFile.size / 1024 / 1024).toFixed(2)} MB · Ready to send</small></div><button onClick={() => setPendingFile(null)}><HiOutlineXMark /></button></div>}
+      {error && <div className="send-error"><span>!</span>{error}<button onClick={() => setError("")}><HiOutlineXMark /></button></div>}
+      {uploading && <div className="upload-progress"><span style={{ width: `${progress}%` }} /></div>}
+
+      <footer className="composer">
+        <div className="composer-tools">
+          <button className="icon-btn" title="Emoji" onClick={() => setEmojiOpen((value) => !value)}><HiOutlineFaceSmile /></button>
+          <button className="icon-btn" title="Attach file" onClick={() => fileInput.current?.click()}><HiOutlinePaperClip /></button>
+          <input ref={fileInput} type="file" hidden accept={ACCEPTED} onChange={(event) => { chooseFile(event.target.files?.[0]); event.target.value = ""; }} />
         </div>
-        <button style={{ width: 38, height: 38, borderRadius: "50%", color: "var(--text-secondary)", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" }}>🔍</button>
-      </div>
+        {emojiOpen && <div className="emoji-panel">{EMOJIS.map((emoji) => <button key={emoji} onClick={() => { setText((old) => `${old}${emoji}`); textarea.current?.focus(); }}>{emoji}</button>)}</div>}
+        <div className="composer-input"><textarea ref={textarea} rows={1} value={text} onChange={handleText} onKeyDown={keyDown} placeholder={pendingFile ? "Add a caption…" : reply ? "Write a reply…" : "Write a message…"} /></div>
+        <button className="send-button" disabled={(!text.trim() && !pendingFile) || uploading} onClick={send} aria-label="Send message">{uploading ? <span className="button-loader" /> : <HiOutlineArrowUp />}</button>
+      </footer>
 
-      {/* Messages */}
-      <div className="message-canvas" style={{ flex: 1, overflowY: "auto", padding: "12px 5%", display: "flex", flexDirection: "column", gap: 2 }}
-        onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); chooseFile(e.dataTransfer.files?.[0]); }}>
-        {grouped.map((item) => {
-          if (item.type === "divider") {
-            return (
-              <div key={item.id} style={{ textAlign: "center", margin: "14px 0 6px" }}>
-                <span style={{ display: "inline-block", background: "#182229", color: "var(--text-secondary)", fontSize: 12, fontWeight: 500, padding: "4px 12px", borderRadius: 8 }}>
-                  {formatDividerDate(item.date)}
-                </span>
-              </div>
-            );
-          }
-          const msg = item.msg;
-          const isOwn = msg.sender?._id === currentUser._id;
-          return (
-            <MessageBubble
-              key={item.id}
-              message={msg}
-              isOwn={isOwn}
-              currentUser={currentUser}
-              onReply={(m) => { setReplyTo(m); textareaRef.current?.focus(); }}
-              onForward={(m) => { setForwardMsg(m); axios.get("/api/users?exclude=" + currentUser._id).then(({ data }) => setRooms(data)); }}
-            />
-          );
-        })}
-
-        {typingNames.length > 0 && (
-          <div style={{ display: "flex", alignSelf: "flex-start", padding: "4px 0" }}>
-            <div style={{ background: "var(--bg-message-in)", borderRadius: "18px 18px 18px 4px", padding: "10px 14px", display: "flex", gap: 5, alignItems: "center" }}>
-              {[0, 1, 2].map((i) => (
-                <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--text-muted)", animation: `bounce 1.4s ease-in-out ${i * 0.2}s infinite` }} />
-              ))}
-            </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Reply bar */}
-      {replyTo && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", background: "var(--bg-tertiary)", borderTop: "1px solid var(--border)", borderLeft: "3px solid var(--accent)", flexShrink: 0 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, color: "var(--accent)", fontWeight: 600, marginBottom: 2 }}>
-              {replyTo.sender?.username || "Unknown"}
-            </div>
-            <div style={{ fontSize: 13, color: "var(--text-secondary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {replyTo.type === "image" ? "📷 Photo" : replyTo.type === "file" ? "📎 File" : decryptMessage(replyTo.content)}
-            </div>
-          </div>
-          <button onClick={() => setReplyTo(null)} style={{ color: "var(--text-muted)", fontSize: 18 }}>✕</button>
-        </div>
-      )}
-
-      {/* File preview */}
-      {pendingFile && (
-        <div className="attachment-preview" style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 20px", background: "var(--bg-tertiary)", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
-          {/image/i.test(pendingFile.type) ? <img src={URL.createObjectURL(pendingFile)} alt="Preview" className="pending-image" /> : <span style={{ fontSize: 24 }}>📄</span>}
-          <span style={{ flex: 1, fontSize: 13, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pendingFile.name}</span>
-          <span className="file-size">{(pendingFile.size / 1024 / 1024).toFixed(2)} MB</span>
-          <button onClick={() => setPendingFile(null)} style={{ color: "var(--danger)", fontSize: 18, fontWeight: 700 }}>✕</button>
-        </div>
-      )}
-
-      {sendError && <div className="send-error">⚠ {sendError}</div>}
-      {uploading && <div className="upload-progress"><span style={{ width: `${uploadProgress}%` }} /></div>}
-
-      {/* Input */}
-      <div className="composer" style={{ display: "flex", alignItems: "flex-end", gap: 8, padding: "10px 16px", background: "var(--bg-secondary)", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
-        <button onClick={() => fileInputRef.current?.click()} title="Attach"
-          style={{ width: 42, height: 42, borderRadius: "50%", color: "var(--text-secondary)", fontSize: 22, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-          onMouseEnter={(e) => e.currentTarget.style.color = "var(--accent)"}
-          onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-secondary)"}
-        >
-          <BsPaperclip />
-        </button>
-        <input ref={fileInputRef} type="file" style={{ display: "none" }}
-          onChange={(e) => { chooseFile(e.target.files?.[0]); e.target.value = ""; }}
-          accept="image/jpeg,image/png,image/gif,image/webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.rtf,.odt,.ods,.odp"
-        />
-        <div style={{ flex: 1, display: "flex", alignItems: "flex-end", background: "var(--bg-tertiary)", borderRadius: 10, padding: "9px 14px", minHeight: 44 }}>
-          <textarea ref={textareaRef}
-            style={{ flex: 1, background: "none", color: "var(--text-primary)", fontSize: 15, resize: "none", maxHeight: 120, overflowY: "auto", lineHeight: 1.5, border: "none", outline: "none", fontFamily: "inherit", padding: 0 }}
-            placeholder={pendingFile ? "Add a caption..." : replyTo ? "Reply..." : "Type a message"}
-            value={text} onChange={handleTyping} onKeyDown={handleKeyDown} rows={1}
-          />
-        </div>
-        <button onClick={sendMessage} disabled={(!text.trim() && !pendingFile) || uploading}
-          style={{
-            width: 44, height: 44, borderRadius: "50%", flexShrink: 0,
-            background: (!text.trim() && !pendingFile) || uploading ? "var(--bg-tertiary)" : "var(--accent)",
-            color: "#fff", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center",
-            cursor: (!text.trim() && !pendingFile) || uploading ? "not-allowed" : "pointer",
-            boxShadow: (!text.trim() && !pendingFile) || uploading ? "none" : "0 2px 8px rgba(0,168,132,0.4)",
-            transition: "background 0.2s",
-          }}>
-          {uploading ? "⏳" : "➤"}
-        </button>
-      </div>
-
-      {/* Forward Modal */}
-      {forwardMsg && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 16 }}
-          onClick={(e) => { if (e.target === e.currentTarget) setForwardMsg(null); }}>
-          <div style={{ background: "#202c33", borderRadius: 16, padding: 24, width: "100%", maxWidth: 380, maxHeight: "70vh", display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontWeight: 700, fontSize: 17, color: "#e9edef" }}>Forward to...</span>
-              <button onClick={() => setForwardMsg(null)} style={{ color: "#8696a0", fontSize: 20 }}>✕</button>
-            </div>
-            <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
-              {rooms.map((user) => (
-                <div key={user._id} onClick={async () => {
-                  const { data: room } = await axios.post("/api/rooms/direct", { userId2: user._id });
-                  handleForward(forwardMsg, room._id);
-                }}
-                  style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", borderRadius: 10, cursor: "pointer", transition: "background 0.15s" }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg-hover)"}
-                  onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-                >
-                  <Avatar name={user.username} size={38} />
-                  <span style={{ fontWeight: 500, color: "#e9edef" }}>{user.username}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      {forward && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setForward(null)}><section className="modal-card forward-modal"><header className="modal-head"><div><span className="eyebrow">SHARE MESSAGE</span><h3>Forward to…</h3></div><button className="icon-btn" onClick={() => setForward(null)}><HiOutlineXMark /></button></header><div className="member-list">{people.map((user) => <button className="member-row" key={user._id} onClick={() => forwardTo(user)}><Avatar name={user.username} size={44} /><span><strong>{user.username}</strong><small>Send this message</small></span><i><HiOutlineArrowUp /></i></button>)}</div></section></div>}
+    </main>
   );
+}
+
+function groupByDate(messages) {
+  const result = []; let previous = "";
+  messages.forEach((message) => { const date = new Date(message.createdAt).toDateString(); if (date !== previous) { result.push({ kind: "date", date, id: `date-${date}` }); previous = date; } result.push({ kind: "message", message }); });
+  return result;
+}
+
+function formatDate(value) {
+  const today = new Date().toDateString(); const yesterday = new Date(Date.now() - 86400000).toDateString();
+  if (value === today) return "Today"; if (value === yesterday) return "Yesterday";
+  return new Date(value).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
