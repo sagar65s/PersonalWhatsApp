@@ -9,7 +9,7 @@ import { useSocket } from "../contexts/SocketContext";
 import { decryptMessage } from "../utils";
 
 export default function Sidebar({ currentUser, onLogout, fullWidth = false }) {
-  const { rooms, activeRoom, openRoom, openDirectChat, notifications } = useChat();
+  const { rooms, activeRoom, openRoom, openDirectChat, notifications, totalUnread } = useChat();
   const { onlineUserIds } = useSocket();
   const [tab, setTab] = useState("chats");
   const [search, setSearch] = useState("");
@@ -57,7 +57,7 @@ export default function Sidebar({ currentUser, onLogout, fullWidth = false }) {
       </div>
 
       <nav className="sidebar-tabs">
-        <button className={tab === "chats" ? "active" : ""} onClick={() => setTab("chats")}><HiOutlineChatBubbleLeftRight /> Chats <span>{rooms.length}</span></button>
+        <button className={tab === "chats" ? "active" : ""} onClick={() => setTab("chats")}><HiOutlineChatBubbleLeftRight /> Chats <span>{totalUnread > 0 ? totalUnread : rooms.length}</span></button>
         <button className={tab === "people" ? "active" : ""} onClick={() => setTab("people")}><HiOutlineUsers /> People</button>
       </nav>
 

@@ -16,6 +16,9 @@ function initSocket(io) {
 
   io.on("connection", async (socket) => {
     console.log("Socket connected: " + socket.id);
+    // A permanent per-user room guarantees realtime delivery even when a
+    // direct conversation was created after this socket connected.
+    socket.join(`user:${socket.userId}`);
     const memberships = await Room.find({ members: socket.userId }).select("_id");
     memberships.forEach((room) => socket.join(room._id.toString()));
 
@@ -99,7 +102,8 @@ function initSocket(io) {
 
         const populated = await message.populate("sender", "username avatar");
 
-        io.to(roomId).emit("message:new", populated);
+        const memberChannels = room.members.map((member) => `user:${member._id.toString()}`);
+        io.to(roomId).to(memberChannels).emit("message:new", populated);
         console.log("Message sent to room: " + roomId + " Content: " + populated.content + " Status: " + status);
 
       } catch (err) {

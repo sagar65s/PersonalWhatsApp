@@ -7,26 +7,31 @@ const SERVER = process.env.REACT_APP_SERVER_URL || window.location.origin;
 
 export function SocketProvider({ currentUser, token, children }) {
   const socket = useRef(null);
+  const [socketInstance, setSocketInstance] = useState(null);
   const [onlineUserIds, setOnlineUserIds] = useState([]);
 
   useEffect(() => {
-    socket.current = io(SERVER, { transports: ["websocket", "polling"], auth: { token } });
+    const connection = io(SERVER, { transports: ["websocket", "polling"], auth: { token } });
+    socket.current = connection;
+    setSocketInstance(connection);
 
-    socket.current.on("connect", () => {
-      socket.current.emit("user:online", { userId: currentUser._id });
+    connection.on("connect", () => {
+      connection.emit("user:online");
     });
 
-    socket.current.on("users:online", (ids) => {
+    connection.on("users:online", (ids) => {
       setOnlineUserIds(ids);
     });
 
     return () => {
-      if (socket.current) socket.current.disconnect();
+      connection.disconnect();
+      if (socket.current === connection) socket.current = null;
+      setSocketInstance(null);
     };
   }, [currentUser._id, token]);
 
   return (
-    <SocketContext.Provider value={{ socket, onlineUserIds }}>
+    <SocketContext.Provider value={{ socket, socketInstance, onlineUserIds }}>
       {children}
     </SocketContext.Provider>
   );
