@@ -26,6 +26,7 @@ export default function Sidebar({ currentUser, onLogout, fullWidth = false }) {
     const message = room.lastMessage;
     if (!message) return "Start a conversation";
     if (message.type === "image") return "Photo";
+    if (message.type === "audio") return "Voice message";
     if (message.type === "file") return message.fileName || "Document";
     return decryptMessage(message.content) || "Message";
   };
@@ -69,7 +70,7 @@ export default function Sidebar({ currentUser, onLogout, fullWidth = false }) {
           return (
             <button className={`chat-row ${activeRoom?._id === room._id ? "active" : ""}`} key={room._id} onClick={() => openRoom(room)}>
               <Avatar name={roomName(room)} size={52} isGroup={room.type === "group"} online={online} />
-              <span className="chat-row-copy"><span className="chat-row-top"><strong>{roomName(room)}</strong><time>{relativeTime(room.updatedAt)}</time></span><span className="chat-row-bottom"><em>{room.lastMessage?.type === "image" ? "▧ " : room.lastMessage?.type === "file" ? "◇ " : ""}{preview(room)}</em>{unread > 0 && <b>{unread > 99 ? "99+" : unread}</b>}</span></span>
+              <span className="chat-row-copy"><span className="chat-row-top"><strong>{roomName(room)}</strong><time>{relativeTime(room.updatedAt)}</time></span><span className="chat-row-bottom"><em>{room.lastMessage?.type === "image" ? "▧ " : room.lastMessage?.type === "file" ? "◇ " : room.lastMessage?.type === "audio" ? "◉ " : ""}{preview(room)}</em>{unread > 0 && <b>{unread > 99 ? "99+" : unread}</b>}</span></span>
             </button>
           );
         }) : <EmptyList icon={<HiOutlineChatBubbleLeftRight />} title="No conversations yet" text="Open People and say hello." />)}

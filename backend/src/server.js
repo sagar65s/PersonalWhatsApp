@@ -40,6 +40,7 @@ const io = new Server(server, {
     ...corsOptions,
   },
 });
+app.set("io", io);
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors(corsOptions));

@@ -31,6 +31,10 @@ const roomSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    clearedBy: [{
+      user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      at: { type: Date, required: true },
+    }],
   },
   { timestamps: true }
 );

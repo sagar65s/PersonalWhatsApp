@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
 import { BsCheck2, BsCheck2All } from "react-icons/bs";
-import { HiOutlineArrowDownTray, HiOutlineArrowRight, HiOutlineArrowUturnLeft, HiOutlineClipboard, HiOutlineDocument, HiOutlineEllipsisVertical, HiOutlinePhoto } from "react-icons/hi2";
+import { HiOutlineArrowDownTray, HiOutlineArrowRight, HiOutlineArrowUturnLeft, HiOutlineClipboard, HiOutlineDocument, HiOutlineEllipsisVertical, HiOutlineMicrophone, HiOutlinePhoto } from "react-icons/hi2";
 import { decryptMessage } from "../utils";
 
 const SERVER = process.env.REACT_APP_SERVER_URL || window.location.origin;
@@ -56,6 +56,8 @@ export default function MessageBubble({ message, isOwn, onReply, onForward }) {
           {message.type === "image" && imageFailed && <a className="broken-attachment" href={url} target="_blank" rel="noopener noreferrer"><HiOutlinePhoto /><span>Open shared image</span></a>}
 
           {message.type === "file" && url && <a className="document-card" href={url} target="_blank" rel="noopener noreferrer" download={message.fileName || true}><span className="document-icon"><HiOutlineDocument /><b>{extension(message.fileName)}</b></span><span className="document-copy"><strong>{message.fileName || "Shared document"}</strong><small>{fileSize(message.fileSize)} · Tap to open</small></span><span className="download-icon"><HiOutlineArrowDownTray /></span></a>}
+
+          {message.type === "audio" && url && <div className="voice-message"><span><HiOutlineMicrophone /></span><audio controls preload="metadata" src={url}>Your browser does not support audio playback.</audio></div>}
 
           {text && <p className={`message-text ${message.type !== "text" ? "caption" : ""}`}>{text}</p>}
           <footer className="message-meta"><time>{time}</time>{isOwn && <Delivery status={message.status || "sent"} />}</footer>

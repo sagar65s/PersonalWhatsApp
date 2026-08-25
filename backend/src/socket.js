@@ -3,6 +3,8 @@ const User = require("./models/User");
 const Room = require("./models/Room");
 const { verifyToken } = require("./middleware/auth");
 
+// A user can have more than one live socket during refresh/reconnect or when
+// ChatApp is open in multiple tabs. Keep every socket until its own disconnect.
 const onlineUsers = new Map();
 const typingUsers = new Map();
 
@@ -22,10 +24,14 @@ function initSocket(io) {
     const memberships = await Room.find({ members: socket.userId }).select("_id");
     memberships.forEach((room) => socket.join(room._id.toString()));
 
+    const userSockets = onlineUsers.get(socket.userId) || new Set();
+    userSockets.add(socket.id);
+    onlineUsers.set(socket.userId, userSockets);
+    await User.findByIdAndUpdate(socket.userId, { isOnline: true, lastSeen: new Date() });
+    io.emit("users:online", Array.from(onlineUsers.keys()));
+
     socket.on("user:online", async () => {
       const userId = socket.userId;
-      onlineUsers.set(userId, socket.id);
-      socket.userId = userId;
       await User.findByIdAndUpdate(userId, { isOnline: true, lastSeen: new Date() });
       io.emit("users:online", Array.from(onlineUsers.keys()));
       console.log("User online: " + userId);
@@ -43,16 +49,14 @@ function initSocket(io) {
       try {
         const room = await Room.findById(roomId)
           .populate("members", "username avatar isOnline lastSeen")
+          .populate("createdBy", "username avatar")
           .populate({
             path: "lastMessage",
             populate: { path: "sender", select: "username" },
           });
         if (!room) return;
         memberIds.forEach((memberId) => {
-          const memberSocketId = onlineUsers.get(memberId);
-          if (memberSocketId) {
-            io.to(memberSocketId).emit("room:new", room);
-          }
+          io.to(`user:${memberId}`).emit("room:new", room);
         });
         socket.join(roomId);
       } catch (err) {
@@ -69,7 +73,7 @@ function initSocket(io) {
         if (!room) return socket.emit("message:error", { message: "Chat access denied" });
         if (!content && !fileUrl) return socket.emit("message:error", { message: "Message is empty" });
         if (typeof content !== "string" || content.length > 12000) return socket.emit("message:error", { message: "Message is too long" });
-        if (fileUrl && (!fileUrl.startsWith("/uploads/") || !["image", "file"].includes(type))) {
+        if (fileUrl && (!fileUrl.startsWith("/uploads/") || !["image", "file", "audio"].includes(type))) {
           return socket.emit("message:error", { message: "Invalid attachment" });
         }
 
@@ -78,7 +82,7 @@ function initSocket(io) {
         );
 
         const allOnline = otherMembers.every((m) =>
-          onlineUsers.has(m._id.toString())
+          (onlineUsers.get(m._id.toString())?.size || 0) > 0
         );
 
         const status = allOnline ? "delivered" : "sent";
@@ -155,11 +159,15 @@ function initSocket(io) {
 
     socket.on("disconnect", async () => {
       if (socket.userId) {
-        onlineUsers.delete(socket.userId);
-        await User.findByIdAndUpdate(socket.userId, {
-          isOnline: false,
-          lastSeen: new Date(),
-        });
+        const sockets = onlineUsers.get(socket.userId);
+        sockets?.delete(socket.id);
+        if (!sockets?.size) {
+          onlineUsers.delete(socket.userId);
+          await User.findByIdAndUpdate(socket.userId, {
+            isOnline: false,
+            lastSeen: new Date(),
+          });
+        }
         io.emit("users:online", Array.from(onlineUsers.keys()));
         console.log("User offline: " + socket.userId);
       }

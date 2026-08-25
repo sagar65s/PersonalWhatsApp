@@ -23,6 +23,10 @@ const allowedTypes = new Map([
   [".odt", ["application/vnd.oasis.opendocument.text", "application/zip"]],
   [".ods", ["application/vnd.oasis.opendocument.spreadsheet", "application/zip"]],
   [".odp", ["application/vnd.oasis.opendocument.presentation", "application/zip"]],
+  [".webm", ["audio/webm", "video/webm", "application/octet-stream"]],
+  [".ogg", ["audio/ogg", "application/ogg"]], [".mp3", ["audio/mpeg", "audio/mp3"]],
+  [".m4a", ["audio/mp4", "audio/x-m4a", "video/mp4"]],
+  [".wav", ["audio/wav", "audio/x-wav"]], [".aac", ["audio/aac"]],
 ]);
 
 const storage = multer.diskStorage({
@@ -47,7 +51,11 @@ router.post("/", auth, upload.single("file"), (req, res) => {
     fileName: path.basename(req.file.originalname).slice(0, 180),
     fileSize: req.file.size,
     mimeType: req.file.mimetype,
-    type: req.file.mimetype.startsWith("image/") ? "image" : "file",
+    type: req.file.mimetype.startsWith("image/")
+      ? "image"
+      : req.file.mimetype.startsWith("audio/") || [".webm", ".ogg", ".mp3", ".m4a", ".wav", ".aac"].includes(path.extname(req.file.originalname).toLowerCase())
+        ? "audio"
+        : "file",
   });
 });
 
