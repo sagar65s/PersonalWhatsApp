@@ -1,0 +1,13 @@
+{
+  "name": "chatapp-professional",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "start": "npm run build && npm start --prefix backend",
+    "install:all": "npm install --prefix backend && npm install --prefix frontend",
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:frontend": "npm start --prefix frontend",
+    "build": "npm run build --prefix frontend",
+    "check": "node --check backend/src/server.js && node --check backend/src/socket.js && npm run build --prefix frontend"
+  }
+}
